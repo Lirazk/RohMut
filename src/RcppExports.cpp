@@ -11,15 +11,34 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // cpp_likelihood_hier
-double cpp_likelihood_hier(double mu_f, double mu_m, const NumericVector& d, const NumericVector& len, const List& indexes, const NumericVector& male_map, const NumericVector& female_map, const NumericVector& male_start, const NumericVector& female_start, const NumericVector& male_end, const NumericVector& female_end, const NumericMatrix& prob);
-RcppExport SEXP _RohMut_cpp_likelihood_hier(SEXP mu_fSEXP, SEXP mu_mSEXP, SEXP dSEXP, SEXP lenSEXP, SEXP indexesSEXP, SEXP male_mapSEXP, SEXP female_mapSEXP, SEXP male_startSEXP, SEXP female_startSEXP, SEXP male_endSEXP, SEXP female_endSEXP, SEXP probSEXP) {
+double cpp_likelihood_hier(double mu_f, double mu_m, const IntegerVector& d, const IntegerVector& len, const List& indexes, const NumericVector& male_map, const NumericVector& female_map, const NumericMatrix& prob, double intercept);
+RcppExport SEXP _RohMut_cpp_likelihood_hier(SEXP mu_fSEXP, SEXP mu_mSEXP, SEXP dSEXP, SEXP lenSEXP, SEXP indexesSEXP, SEXP male_mapSEXP, SEXP female_mapSEXP, SEXP probSEXP, SEXP interceptSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< double >::type mu_f(mu_fSEXP);
     Rcpp::traits::input_parameter< double >::type mu_m(mu_mSEXP);
-    Rcpp::traits::input_parameter< const NumericVector& >::type d(dSEXP);
-    Rcpp::traits::input_parameter< const NumericVector& >::type len(lenSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type d(dSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type len(lenSEXP);
+    Rcpp::traits::input_parameter< const List& >::type indexes(indexesSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type male_map(male_mapSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type female_map(female_mapSEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type prob(probSEXP);
+    Rcpp::traits::input_parameter< double >::type intercept(interceptSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_likelihood_hier(mu_f, mu_m, d, len, indexes, male_map, female_map, prob, intercept));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_likelihood_hier_boundary
+double cpp_likelihood_hier_boundary(double mu_f, double mu_m, const IntegerVector& d, const IntegerVector& len, const List& indexes, const NumericVector& male_map, const NumericVector& female_map, const NumericVector& male_start, const NumericVector& female_start, const NumericVector& male_end, const NumericVector& female_end, const NumericMatrix& prob, double intercept);
+RcppExport SEXP _RohMut_cpp_likelihood_hier_boundary(SEXP mu_fSEXP, SEXP mu_mSEXP, SEXP dSEXP, SEXP lenSEXP, SEXP indexesSEXP, SEXP male_mapSEXP, SEXP female_mapSEXP, SEXP male_startSEXP, SEXP female_startSEXP, SEXP male_endSEXP, SEXP female_endSEXP, SEXP probSEXP, SEXP interceptSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type mu_f(mu_fSEXP);
+    Rcpp::traits::input_parameter< double >::type mu_m(mu_mSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type d(dSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type len(lenSEXP);
     Rcpp::traits::input_parameter< const List& >::type indexes(indexesSEXP);
     Rcpp::traits::input_parameter< const NumericVector& >::type male_map(male_mapSEXP);
     Rcpp::traits::input_parameter< const NumericVector& >::type female_map(female_mapSEXP);
@@ -28,7 +47,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const NumericVector& >::type male_end(male_endSEXP);
     Rcpp::traits::input_parameter< const NumericVector& >::type female_end(female_endSEXP);
     Rcpp::traits::input_parameter< const NumericMatrix& >::type prob(probSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_likelihood_hier(mu_f, mu_m, d, len, indexes, male_map, female_map, male_start, female_start, male_end, female_end, prob));
+    Rcpp::traits::input_parameter< double >::type intercept(interceptSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_likelihood_hier_boundary(mu_f, mu_m, d, len, indexes, male_map, female_map, male_start, female_start, male_end, female_end, prob, intercept));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -82,7 +102,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_RohMut_cpp_likelihood_hier", (DL_FUNC) &_RohMut_cpp_likelihood_hier, 12},
+    {"_RohMut_cpp_likelihood_hier", (DL_FUNC) &_RohMut_cpp_likelihood_hier, 9},
+    {"_RohMut_cpp_likelihood_hier_boundary", (DL_FUNC) &_RohMut_cpp_likelihood_hier_boundary, 13},
     {"_RohMut_cpp_em_map", (DL_FUNC) &_RohMut_cpp_em_map, 17},
     {"_RohMut_cpp_em", (DL_FUNC) &_RohMut_cpp_em, 11},
     {NULL, NULL, 0}

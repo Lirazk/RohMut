@@ -58,6 +58,7 @@ estimate_EM is used to estimate the male's and female's mutation rate based on R
 The model is based on a mixture of poissons.
 }
 \examples{
+library(data.table)
 data("fs_cousins", package = "RohMut")
 # Note: a somewhat larger file so it might take a few seconds to load
 data("genetic_map", package = "RohMut")
@@ -106,17 +107,17 @@ for (i in 1:22) {
            genetic_map[chr == i, female_cM], xout = fs_cousins[index, start - range], rule = 2)$y
 }
 
-# For the estimation of probability, we use a simple logistic regression which classify each individual based on
-# the number of segments he has, and trained on other simulated data. 
-# A more sophisticated models can (and probably should) be used.
+# For the estimation of probability, we use a simple logistic regression which classify each 
+# individual based on the number of segments he has, and trained on other simulated data. 
+# A more sophisticated models can (and probably should) be used, since otherwise there's a small bias
+# in the estimate.
 data("prob_model", package = "RohMut")
 probs <- predict(model, data.table::data.table(fs_cousins)[, .N, by = subject], type = "response")
-probs <- cbind(probs, 1-probs)
-RohMut::estimate_EM(fs_cousins, c(2e-8, 1e-8, 0.0), probs, maxit = 100, estimate_intercept = T, male_map = male_dist/100, 
-female_map = female_dist/100, male_start = male_start/100, female_start = female_start/100, 
-male_end = male_end/100, female_end = female_end/100)
+RohMut::estimate_EM(fs_cousins, c(2e-8, 1e-8, 0.0), probs, maxit = 100, estimate_intercept = T, 
+male_map = male_dist/100,  female_map = female_dist/100, male_start = male_start/100, 
+female_start = female_start/100, male_end = male_end/100, female_end = female_end/100)
 # It's also possible to use acceleration schemes, for example:
-SQUAREM::squarem(c(2e-8, 1e-8, 0.0), function(theta) RohMut::estimate_EM(fs_cousins, theta, probs, maxit = 1, 
+SQUAREM::squarem(c(2e-8, 1e-8), function(theta) RohMut::estimate_EM(fs_cousins, theta, probs, maxit = 1, 
 male_map = male_dist/100, female_map = female_dist/100, male_start = male_start/100, 
 female_start = female_start/100, male_end = male_end/100, female_end = female_end/100), 
 control = list(tol=1e-15))

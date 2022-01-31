@@ -101,8 +101,8 @@ double logsumexp(const double a, const std::vector<double> &arr) {
 // The likelihood of a specific segment, given that there are n1 female ancestors and n2 male ancestors
 // d is the number of mutations, len is the lengths, mu_f and mu_m the female and male mutation rate correspondingly.
 // The male/female lengths are in morgans.
-NumericVector log_segment(int n1, int n2, const NumericVector &d,
-                           const NumericVector &len, double mu_f, double mu_m,
+NumericVector log_segment(int n1, int n2, const IntegerVector &d,
+                           const IntegerVector &len, double mu_f, double mu_m, double intercept,
                            const NumericVector &male_map,
                            const NumericVector &female_map) {
   NumericVector result(d.size());
@@ -115,8 +115,8 @@ NumericVector log_segment(int n1, int n2, const NumericVector &d,
     const double d1 = (n1 + 1) * female_map[i] + (n2 - 1) * male_map[i];
     const double d2 = (n1 - 1) * female_map[i] + (n2 + 1) * male_map[i];
 
-    const double par1 = len[i] * ((n1 + 1) * mu_f + (n2 - 1) * mu_m);
-    const double par2 = len[i] * ((n1 - 1) * mu_f + (n2 + 1) * mu_m);
+    const double par1 = len[i] * (intercept + (n1 + 1) * mu_f + (n2 - 1) * mu_m);
+    const double par2 = len[i] * (intercept + (n1 - 1) * mu_f + (n2 + 1) * mu_m);
     const double pois1 = log(0.5) + d[i] * log(par1) - par1 - temp - d1;
     const double pois2 = log(0.5) + d[i] * log(par2) - par2 - temp - d2;
 
@@ -128,8 +128,8 @@ NumericVector log_segment(int n1, int n2, const NumericVector &d,
 // The likelihood of a specific segment, including the terms related to the start and end of each segment, given that there are n1 female ancestors and n2 male ancestors
 // d is the number of mutations, len is the lengths, mu_f and mu_m the female and male mutation rate correspondingly.
 // The male/female lengths are in morgans.
-NumericVector log_segment(int n1, int n2, const NumericVector &d, const NumericVector &len,
-                           double mu_f, double mu_m, const NumericVector &male_map,
+NumericVector log_segment(int n1, int n2, const IntegerVector &d, const IntegerVector &len,
+                           double mu_f, double mu_m, double intercept, const NumericVector &male_map,
                            const NumericVector &female_map, const NumericVector &male_start,
                            const NumericVector &female_start, const NumericVector &male_end,
                            const NumericVector &female_end) {
@@ -159,8 +159,8 @@ NumericVector log_segment(int n1, int n2, const NumericVector &d, const NumericV
       w2 = log((n1 - 1) * female_end[i] + (n2 + 1) * male_end[i]);
     }
 
-    const double par1 = len[i] * ((n1 + 1) * mu_f + (n2 - 1) * mu_m);
-    const double par2 = len[i] * ((n1 - 1) * mu_f + (n2 + 1) * mu_m);
+    const double par1 = len[i] * (intercept + (n1 + 1) * mu_f + (n2 - 1) * mu_m);
+    const double par2 = len[i] * (intercept + (n1 - 1) * mu_f + (n2 + 1) * mu_m);
     const double pois1 = log(0.5) + d[i] * log(par1) - par1 - temp - d1 + len[i]*w1;
     const double pois2 = log(0.5) + d[i] * log(par2) - par2 - temp - d2 + len[i]*w2;
     result[i] = logsumexp({pois1, pois2});
@@ -170,18 +170,13 @@ NumericVector log_segment(int n1, int n2, const NumericVector &d, const NumericV
 
 // [[Rcpp::export]]
 double cpp_likelihood_hier(double mu_f, double mu_m,
-                           const NumericVector &d, const NumericVector &len,
+                           const IntegerVector &d, const IntegerVector &len,
                            const List &indexes,
                            const NumericVector &male_map,
                            const NumericVector &female_map,
-                           const NumericVector &male_start,
-                           const NumericVector &female_start,
-                           const NumericVector &male_end,
-                           const NumericVector &female_end,
-                           const NumericMatrix &prob)
-
+                           const NumericMatrix &prob,
+                           double intercept = 0.0)
 {
-  // TODO: add ability to choose between the two versions of log_segment?
   // mu_f = exp(mu_f);
   // mu_m = exp(mu_m);
   double ll = 0;
@@ -196,7 +191,63 @@ double cpp_likelihood_hier(double mu_f, double mu_m,
   // Calculate the likelihood for each segment.
   for (int N: N_) {
     for (size_t j = 0; j < N; j++) {
-      segment(_, i) = log_segment(j+2, (N+3) - (j+2), d, len, mu_f, mu_m, male_map, female_map);
+      segment(_, i) = log_segment(j+2, (N+3) - (j+2), d, len, mu_f, mu_m, intercept, male_map, female_map);
+      i++;
+    }
+  }
+
+  for (size_t i = 0; i < indexes.size(); ++i) {
+    IntegerVector index = indexes[i];
+    std::vector<double> sum_s (sum(N_), 0.0);
+    for (size_t j = 0; j < index.size(); ++j) {
+      for (size_t k = 0; k < sum(N_); k++) {
+        sum_s[k] += segment(index[j], k);
+      }
+    }
+    std::vector<double> segment_likelihood (sum(N_), 0.0);
+    size_t m_all = 0;
+    size_t n_counter = 0;
+    for (int N: N_) {
+      for (size_t j = 0; j < N; j++) {
+        segment_likelihood[m_all] = prob(i, n_counter) + R::dbinom(j, N - 1, 0.5, 1) + sum_s[m_all];
+        m_all++;
+      }
+      n_counter++;
+    }
+ 
+    ll += logsumexp(segment_likelihood);
+  }
+  return (-ll);
+}
+
+// [[Rcpp::export]]
+double cpp_likelihood_hier_boundary(double mu_f, double mu_m,
+                           const IntegerVector &d, const IntegerVector &len,
+                           const List &indexes,
+                           const NumericVector &male_map,
+                           const NumericVector &female_map,
+                           const NumericVector &male_start,
+                           const NumericVector &female_start,
+                           const NumericVector &male_end,
+                           const NumericVector &female_end,
+                           const NumericMatrix &prob,
+                           double intercept = 0.0)
+{
+  // mu_f = exp(mu_f);
+  // mu_m = exp(mu_m);
+  double ll = 0;
+  
+  // NumericVector N_ = {3, 5, 7};
+  NumericVector N_ = {3, 5};
+
+  // Not sure whether to preallocate everything.
+  NumericMatrix segment (d.size(), sum(N_)); 
+  
+  size_t i = 0;
+  // Calculate the likelihood for each segment.
+  for (int N: N_) {
+    for (size_t j = 0; j < N; j++) {
+      segment(_, i) = log_segment(j+2, (N+3) - (j+2), d, len, mu_f, mu_m, intercept, male_map, female_map, male_start, female_start, male_end, female_end);
       i++;
     }
   }
@@ -263,16 +314,18 @@ NumericVector cpp_em_map(
 NumericVector N_ = {3, 5};
   // Few tests
   if (prob.nrow() != indexes.size()) {
-    fprintf(
-        stderr,
-        "Number of rows in prob should be the same as the length of indexes.");
-        return NA_REAL;
+    REprintf("Number of rows in prob should be the same as the length of indexes.\n");
+    // fprintf(
+    //     stdout,
+    //     "Number of rows in prob should be the same as the length of indexes.");
+    return NA_REAL;
   }
   if (prob.ncol() != N_.size()) {
-      fprintf(
-        stderr,
-        "Number of cols in prob should be 2.");
-        return NA_REAL;
+    REprintf("Number of cols in prob should be 2.\n");
+      // fprintf(
+      //   stdout,
+      //   "Number of cols in prob should be 2.");
+    return NA_REAL;
   }
   double prev_mu1 = mu1;
   double prev_mu2 = mu2;
@@ -589,16 +642,19 @@ NumericVector cpp_em(
   NumericVector N_ = {3, 5};
   // Few tests
   if (prob.nrow() != indexes.size()) {
-    fprintf(
-        stderr,
-        "Number of rows in prob should be the same as the length of indexes.");
-        return NA_REAL;
+    // fprintf(
+    //     stdout,
+    //     "Number of rows in prob should be the same as the length of indexes.");
+    //     return NA_REAL;
+    REprintf("Number of rows in prob should be the same as the length of indexes.\n");
+    return NA_REAL;
   }
   if (prob.ncol() != N_.size()) {
-      fprintf(
-        stderr,
-        "Number of cols in prob should be 3.");
-        return NA_REAL;
+    REprintf("Number of cols in prob should be 2.\n");
+      // fprintf(
+      //   stdout,
+      //   "Number of cols in prob should be 3.");
+    return NA_REAL;
   }
   double prev_mu1 = mu1;
   double prev_mu2 = mu2;
