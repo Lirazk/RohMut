@@ -1,21 +1,30 @@
 # RohMut
 
+This R packages estimates the sex-specific mutation rate based from runs of homozygosity(ROH) segments from close common ancestor (Parents should be either first or second cousins).
+
+We assume that the number of mutations in each generation is a Poisson process, with the rate depending on the sex of the ancestor.
+
+Looking for example at the offspring of a first cousin, there are three possible pedigrees - Either the grand grandparents had two daughters/sons and those are the grandparents of the individual, or they had one daughter and one son, and they are the grandparents of the individual. We assume exchangeability so the probability of two sons is 0.25, one son and one daughter is 0.5, and of two daughters is 0.25. Finally, each segment came from either the grand grandmother or grand grandfather with equal probability (actually due to the different recombination rate, the probability is slightly different from 0.5, but we assume it's 0.5).
+
+We get the hierarchical mixture model:
+
+$$\sum_i^n \sum_{\text{First/second cousin}} P(\text{i is offspring of First/second cousin}) \cdot \sum_{a} P(\text{a is this specific pedigree length}) \sum_{s}^{S_i} 0.5 \text{Pois}(\text{segment s length * (genotyping error rate + (n^f_{a, s}+1) * female mutation rate + (n^m_{a, s} - 1) * male mutation rate)}) + 0.5 \text{Pois}(\text{segment s length * (genotyping error rate + (n^f_{a, s} - 1) * female mutation rate + (n^m_{a, s} + 1) * male mutation rate)})$$
+
+The likelihood is maximized through a variation of the Expectation maximization algorithm (EM).
+Note that the likelihood is symmetric with respect to the mutation rate, so after the estimation if the recombination rate is provided, we use it to select which of the parameters is the male's mutation rate and which is the female's based on the probability of recombination.
+
 ## Installation
 
-```
+To install using the devtools package:
+
+```R
+# If devtools is not available, install it first
+# install.packages("devtools")
 devtools::install_github("Lirazk/RohMut")
 ```
+## Quick start
 
-## Use
-
-There are two main ways to estimate the mutation rate. The first is to provide the male and female genetic distance of each segment + the genetic distance in area around the start and end of each segment, see ?estimate_EM for an example. One problem with it is that it's slightly biased (more so when the recombination model is wrong, which it is for real data).
-The second is to not take recombination into account, which works but cant differentiate between the male and female mutation rate (which isn't a problem if we are willing to assume that the male's mutation rate is higher).
-
-One way to solve the bias problem is to first estimate with the recombination rate, and use the resulting estimate as a starting value for the algorithm without recombination.
-
-### Example
-
-```
+```R
 library(RohMut)
 
 data("fs_cousins", package = "RohMut")
@@ -24,7 +33,6 @@ data("prob_model", package = "RohMut")
 fs_cousins <- data.table(fs_cousins)
 
 probs <- predict(model, fs_cousins[, .N, by = subject], type = "response")
-probs <- cbind(probs, 1-probs)
 
 fs_cousins[, mutation := rpois(nrow(fs_cousins), length * (1e-8 + 2.5e-9 * (Nf - male_meiosis) + 7.5e-9 * (Nm + male_meiosis)))]
 SQUAREM::squarem(c(1e-8, 2e-8, 1e-7), 

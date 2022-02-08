@@ -38,6 +38,14 @@ double logsumexp(double a, double b) {
   return (log(exp(a - maximum) + exp(b - maximum)) + maximum);
 }
 
+double logsumexp(double a, double b, double c) {
+  double maximum = fmax(fmax(a, b), c);
+  if (maximum < -1000000000) {
+    return (maximum);
+  }
+  return (log(exp(a - maximum) + exp(b - maximum) + exp(c - maximum)) + maximum);
+}
+
 template <std::size_t N> double logsumexp(const double (&arr)[N]) {
   double maximum = arr[0];
   double sum = 0.0;
@@ -276,69 +284,132 @@ double cpp_likelihood_hier_boundary(double mu_f, double mu_m,
   return (-ll);
 }
 
-// NumericVector cpp_em_map(
-//     double mu1, double mu2, const NumericVector &mutation,
-//     const NumericVector &len, List &indexes, int maxiter, double eps,
-//     const NumericMatrix &prob, NumericVector male_map, NumericVector female_map,
-//     NumericVector male_start = NA_REAL, NumericVector female_start = NA_REAL,
-//     NumericVector male_end = NA_REAL, NumericVector female_end = NA_REAL,
-//     bool stochastic = false, bool estimate_inner_pi = false,
-//     bool estimate_outer_p = false,
-//     bool estimate_intercept = false, double intercept = 0.0) 
+// Calculations needed for a specific pedigree
+std::vector<double> calculate_specific_pedigree(const int N, const double mu1, const double mu2, double intercept,
+                          const IntegerVector &mutation,
+                          const IntegerVector &len, const IntegerVector &index,
+                          const std::vector<double> &likelihood_precalc) {
+  std::vector<double> logsumexp_jm1(N, 0.0);
+  std::vector<double> logsumexp_jm2(N, 0.0);
+  std::vector<double> logsumexp_jl1(N, 0.0);
+  std::vector<double> logsumexp_jl2(N, 0.0);
+  std::vector<double> logsumexp_ji1(N, 0.0);
+  std::vector<double> logsumexp_ji2(N, 0.0);
+
+  std::vector<double> wi(N, 0.0);
+  double sum_mutation[2] = {-INFINITY, -INFINITY};
+  double sum_len[2] = {-INFINITY, -INFINITY};
+  double sum_intercept[2] = {-INFINITY, -INFINITY};
+  for (size_t m = 0; m < N; m++) {
+    double sm[2] = {-INFINITY, -INFINITY};
+    double sl[2] = {-INFINITY, -INFINITY};
+    double si[2] = {-INFINITY, -INFINITY};
+    const int general_N = N + 3;
+    const double par[2] = {(m + 1) * mu1 + (general_N - (m + 1)) * mu2 + intercept,
+                           (m + 3) * mu1 + (general_N - (m + 3)) * mu2 + intercept};
+    const double log_par[2] = {log(par[0]), log(par[1])};
+    for (size_t j = 0; j < index.size(); j++) {
+      const double mut = mutation[index[j]];
+      const double l = len[index[j]];
+      const double log_mut = log(mut);
+      const double log_len = log(l);
+
+      double a = mut * log_par[0] - l * par[0] + likelihood_precalc[index[j]];
+      double b = mut * log_par[1] - l * par[1] + likelihood_precalc[index[j]];
+
+      const double normalize = logsumexp(a, b);
+      a -= normalize;
+      b -= normalize;
+
+      sm[0] = logsumexp({sm[0], a + log_mut - log_par[0] + log((m + 1) * mu1),
+                         b + log_mut - log_par[1] + log((m + 3) * mu1)});
+      sm[1] = logsumexp(
+          {sm[1], a + log_mut - log_par[0] + log((general_N - (m + 1)) * mu2),
+           b + log_mut - log_par[1] + log((general_N - (m + 3)) * mu2)});
+
+      sl[0] = logsumexp(
+          {sl[0], a + log_len + log(m + 1), b + log_len + log(m + 3)});
+      sl[1] = logsumexp({sl[1], a + log_len + log(general_N - (m + 1)),
+                         b + log_len + log(general_N - (m + 3))});
+
+      si[0] = logsumexp({si[0], a + log_mut - log_par[0] + log(intercept), b + log_mut - log_par[1] + log(intercept)});
+      si[1] = logsumexp({si[1], a + log_len, b + log_len});
+
+      wi[m] += normalize;
+    }
+
+    wi[m] += R::dbinom(m, N - 1, 0.5, 1);
+    logsumexp_jm1[m] = sm[0];
+    logsumexp_jm2[m] = sm[1];
+    logsumexp_jl1[m] = sl[0];
+    logsumexp_jl2[m] = sl[1];
+    logsumexp_ji1[m] = si[0];
+    logsumexp_ji2[m] = si[1];
+  }
+
+  double normalize1 = logsumexp(wi);
+  for (size_t m = 0; m < N; m++) {
+    wi[m] -= normalize1;
+  }
+
+  for (size_t m = 0; m < N; m++) {
+    sum_mutation[0] = logsumexp(sum_mutation[0], logsumexp_jm1[m] + wi[m]);
+    sum_mutation[1] = logsumexp(sum_mutation[1], logsumexp_jm2[m] + wi[m]);
+    sum_len[0] = logsumexp(sum_len[0], logsumexp_jl1[m] + wi[m]);
+    sum_len[1] = logsumexp(sum_len[1], logsumexp_jl2[m] + wi[m]);
+    sum_intercept[0] = logsumexp(sum_intercept[0], logsumexp_ji1[m] + wi[m]);
+    sum_intercept[1] = logsumexp(sum_intercept[1], logsumexp_ji2[m] + wi[m]);
+  }
+  std::vector result(7, 0.0);
+  result[0] = sum_mutation[0];
+  result[1] = sum_mutation[1];
+  result[2] = sum_len[0];
+  result[3] = sum_len[1];
+  result[4] = sum_intercept[0];
+  result[5] = sum_intercept[1];
+  result[6] = normalize1;
+  return (result);
+}
 
 //' Estimate the mutation rate using EM
 //'
-//' @param mu1 Starting value for the female's mutation parameter
-//' @param mu2 Starting value for the male's mutation parameter
+//' @param mu1 Starting value for the first mutation parameter
+//' @param mu2 Starting value for the second mutation parameter
 //' @param mutation Vector of the number of mutations in a segment
-//' @param len Vector of the length of a segment
-//' @param indexes List of vector, where each vector is the indexes of the segments for an individual
+//' @param len Vector of the (physical) length of a segment
+//' @param indexes List of vector, where each vector is the indexes of the segments for an individual 
 //' @param maxiter Maximum number of EM iterations
-//' @param eps The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps
-//' @param prob Matrix of probabilities, where the first column is the probability of being first cousin, and the second of second cousin.
-//' @param estimate_intercept Whether to estimate the intercept as well, intercept is used when there's genotyping error.
-//' @param intercept Starting value for the intercept.
-//' @param stochastic If true, an incremental version is used instead.
-//' @return An estimate of the male mutation rate, female mutation rate and of the intercept.
+//' @param eps The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps 
+//' @param prob Matrix of probabilities, where the first column is the probability of being first cousin, and the second of second cousin. 
+//' @param estimate_intercept Whether to estimate the intercept as well, intercept is used when there's genotyping error. 
+//' @param intercept Starting value for the intercept. 
+//' @param stochastic If true, an incremental version is used instead. 
+//' @return An estimate of the male mutation rate, female mutation rate and the intercept.
 // [[Rcpp::export]]
-NumericVector cpp_em_map(
-    double mu1, double mu2, const NumericVector &mutation,
-    const NumericVector &len, List &indexes, int maxiter, double eps,
-    const NumericMatrix &prob, IntegerVector male_map, IntegerVector female_map,
-    NumericVector male_start = NA_REAL, NumericVector female_start = NA_REAL,
-    NumericVector male_end = NA_REAL, NumericVector female_end = NA_REAL,
-    bool stochastic = false,
-    bool estimate_intercept = false, double intercept = 0.0) 
-{
+NumericVector cpp_em2(double mu1, double mu2, const IntegerVector &mutation,
+                      const IntegerVector &len, List &indexes, int maxiter,
+                      double eps, const NumericMatrix &prob, bool estimate_intercept = false,
+                     double intercept = 0.0) {
   // NumericVector N_ = {3, 5, 7};
-NumericVector N_ = {3, 5};
+  NumericVector N_ = {3, 5};
+
   // Few tests
   if (prob.nrow() != indexes.size()) {
-    REprintf("Number of rows in prob should be the same as the length of indexes.\n");
-    // fprintf(
-    //     stdout,
-    //     "Number of rows in prob should be the same as the length of indexes.");
+    REprintf("Number of rows in prob should be the same as the length of "
+             "indexes.\n");
     return NA_REAL;
   }
   if (prob.ncol() != N_.size()) {
     REprintf("Number of cols in prob should be 2.\n");
-      // fprintf(
-      //   stdout,
-      //   "Number of cols in prob should be 2.");
     return NA_REAL;
   }
   double prev_mu1 = mu1;
   double prev_mu2 = mu2;
+  double prev_intercept = intercept;
   int n = mutation.size();
 
-  int N_all = sum(N_);
+  // int N_all = sum(N_);
 
-  std::vector<double> pi1(N_all, 0.5);
-  std::vector<double> pi2(N_all, 0.5);
-
-  // std::vector<double> outer_p(N_all, 1/(double)N_all);
-
-  // Precalcualte some of the possible things.
   std::vector<double> likelihood_precalc(n, 0.0);
   for (size_t k = 0; k < indexes.size(); k++) {
     IntegerVector index = indexes[k];
@@ -348,243 +419,70 @@ NumericVector N_ = {3, 5};
     }
   }
 
-  // Another preallocation since it was a bit faster to do logsumexp in the end instead of in each iteration.
-  // sm is the terms related to the mutation for each parameter
-  // sl is the terms related to the lengths for each parameter
-  // and si is the terms for the intercept.
-  NumericMatrix sm1(n, N_all);
-  NumericMatrix sm2(n, N_all);
-  NumericMatrix sl1(n, N_all);
-  NumericMatrix sl2(n, N_all);
-  NumericMatrix si1(n, N_all);
-  NumericMatrix si2(n, N_all);
-
-  std::fill(sm1.begin(), sm1.end(), R_NegInf);
-  std::fill(sm2.begin(), sm2.end(), R_NegInf);
-  std::fill(sl1.begin(), sl1.end(), R_NegInf);
-  std::fill(sl2.begin(), sl2.end(), R_NegInf);
-  std::fill(si1.begin(), si1.end(), R_NegInf);
-  std::fill(si2.begin(), si2.end(), R_NegInf);
   for (int i = 0; i < maxiter; i++) {
-    // double sum_len[2] = {-INFINITY, -INFINITY};
-    // double sum_mutation[2] = {-INFINITY, -INFINITY};
+    double sum_len[2] = {-INFINITY, -INFINITY};
+    double sum_mutation[2] = {-INFINITY, -INFINITY};
+    double sum_intercept[2] = {-INFINITY, -INFINITY};
+    // double sum_p[2] = {-INFINITY, -INFINITY};
 
-    // std::vector<double> sum_p1(N_all, -INFINITY);
-    // std::vector<double> sum_p2(N_all, -INFINITY);
-
-    // std::vector<double> sum_outer_p(N_all, -INFINITY);
-    // double sum_intercept[2] = {-INFINITY, -INFINITY};
-
-    // Calculate P(Z | Y_i)
-    // for (size_t n_index = 0; n_index < N_.size(); n_index++) {
-    // int N = N_[n_index];
-    size_t p = indexes.size();
-
-    for (size_t k = 0; k < p; k++) {
+    for (size_t k = 0; k < indexes.size(); k++) {
       IntegerVector index = indexes[k];
-      if (stochastic) {
-        index = sample(indexes.size(), 1, false, R_NilValue, false);
-      }
 
-      // Calculate wia
-      std::vector<double> wi(N_all, 0.0);
-      for (size_t j = 0; j < index.size(); j++) {
-        double l = len[index[j]];
-        size_t m_all = 0;
-        for (int N : N_) {
-          // Naming is hard.
-          const int general_N = N + 3;
-          for (size_t m = 0; m < N; m++) {
-            const int n1 = m + 2;
-            const int n2 = general_N - n1;
+      double sum_mutation1[2] = {-INFINITY, -INFINITY};
+      double sum_len1[2] = {-INFINITY, -INFINITY};
+      double sum_intercept1[2] = {-INFINITY, -INFINITY};
+      std::vector result1 =
+          calculate_specific_pedigree(N_[0], mu1, mu2, intercept, mutation, len, index, likelihood_precalc);
+      sum_mutation1[0] = result1[0];
+      sum_mutation1[1] = result1[1];
+      sum_len1[0] = result1[2];
+      sum_len1[1] = result1[3];
+      sum_intercept1[0] = result1[4];
+      sum_intercept1[1] = result1[5];
+      double normalize1 = result1[6];
 
-            const double par[2] = {
-                (m + 1) * mu1 + (general_N - (m + 1)) * mu2 + intercept,
-                (m + 3) * mu1 + (general_N - (m + 3)) * mu2 + intercept};
-            const double d[2] = {
-                (m + 1) * male_map[index[j]] +
-                    (general_N - (m + 1)) * female_map[index[j]],
-                (m + 3) * male_map[index[j]] +
-                    (general_N - (m + 3)) * female_map[index[j]]};
+      std::vector result2 =
+          calculate_specific_pedigree(N_[1], mu1, mu2, intercept, mutation, len, index, likelihood_precalc);
+      double sum_mutation2[2] = {-INFINITY, -INFINITY};
+      double sum_len2[2] = {-INFINITY, -INFINITY};
+      double sum_intercept2[2] = {-INFINITY, -INFINITY};
+      sum_mutation2[0] = result2[0];
+      sum_mutation2[1] = result2[1];
+      sum_len2[0] = result2[2];
+      sum_len2[1] = result2[3];
+      sum_intercept2[0] = result2[4];
+      sum_intercept2[1] = result2[5];
+      double normalize2 = result2[6];
 
-            double w1 = log((n1 + 1) * female_start[i] + (n2 - 1) * male_start[i]) +
-                log((n1 + 1) * female_end[i] + (n2 - 1) * male_end[i]);
-            double w2 = log((n1 - 1) * female_start[i] + (n2 + 1) * male_start[i]) +
-                        log((n1 - 1) * female_end[i] + (n2 + 1) * male_end[i]);
+      double p_g[2] = {log(prob(k, 0)) + normalize1,
+                       log(prob(k, 1)) + normalize2};
 
-            if (male_end[i] == 0.0 && male_start[i] == 0.0) {
-              w1 = 0.0;
-              w2 = 0.0;
-            } else if (male_end[i] == 0.0 || female_end[i] == 0.0) {
-              w1 = log((n1 + 1) * female_start[i] + (n2 - 1) * male_start[i]);
-              w2 = log((n1 - 1) * female_start[i] + (n2 + 1) * male_start[i]);
-            } else if (male_start[i] == 0.0 || female_start[i] == 0.0) {
-              w1 = log((n1 + 1) * female_end[i] + (n2 - 1) * male_end[i]);
-              w2 = log((n1 - 1) * female_end[i] + (n2 + 1) * male_end[i]);
-            }
+      double normalize = logsumexp(p_g);
+      p_g[0] -= normalize;
+      p_g[1] -= normalize;
 
-            wi[m_all] +=
-                logsumexp({mutation[index[j]] * log(par[0]) - l * par[0] +
-                               likelihood_precalc[index[j]] - d[0] + w1,
-                           mutation[index[j]] * log(par[1]) - l * par[1] +
-                               likelihood_precalc[index[j]] - d[1] + w2});
-            m_all++;
-          }
-        }
-      }
-      size_t m_all = 0;
-      size_t n_counter = 0;
-      for (int N : N_) {
-        for (size_t m = 0; m < N; m++) {
-          // Change 0.5 to prob for N=3, 5 etc
-          // wi[m] += log(0.5) + R::dbinom(m, N-1, 0.5, 1);
-        //   if (estimate_outer_p) {
-        //       wi[m_all] += log(outer_p[m_all]);
-        //   }
-        //   else {
-              wi[m_all] += log(prob(k, n_counter)) + R::dbinom(m, N - 1, 0.5, 1);
-        //   }
-          m_all++;
-        }
-        n_counter++;
-      }
-      double normalize = logsumexp(wi);
-      for (size_t m = 0; m < N_all; m++) {
-        wi[m] -= normalize;
-      }
+      sum_mutation[0] = logsumexp({sum_mutation[0], sum_mutation1[0] + p_g[0],
+                                   sum_mutation2[0] + p_g[1]});
 
-      for (size_t j = 0; j < index.size(); j++) {
-        double l = len[index[j]];
-        double log_mutation = log(mutation[index[j]]);
-        double log_len = log(l);
-        double a[N_all];
-        double b[N_all];
-        {
-          size_t m_all = 0;
-          for (int N : N_) {
-            const int general_N = N + 3;
-            for (size_t m = 0; m < N; m++) {
-              const double par[2] = {
-                  (m + 1) * mu1 + (general_N - (m + 1)) * mu2 + intercept,
-                  (m + 3) * mu1 + (general_N - (m + 3)) * mu2 + intercept};
-              const double log_par[2] = {log(par[0]), log(par[1])};
-              const double name[2] = {-log_par[0] + log((m + 1) * mu1),
-                                      -log_par[1] + log((m + 3) * mu1)};
-              const double d[2] = {
-                  (m + 1) * male_map[index[j]] +
-                      (general_N - (m + 1)) * female_map[index[j]],
-                  (m + 3) * male_map[index[j]] +
-                      (general_N - (m + 3)) * female_map[index[j]]};
+      sum_mutation[1] = logsumexp({sum_mutation[1], sum_mutation1[1] + p_g[0],
+                                   sum_mutation2[1] + p_g[1]});
+      sum_len[0] =
+          logsumexp({sum_len[0], sum_len1[0] + p_g[0], sum_len2[0] + p_g[1]});
+      sum_len[1] =
+          logsumexp({sum_len[1], sum_len1[1] + p_g[0], sum_len2[1] + p_g[1]});
+      
+      sum_intercept[0] = logsumexp({sum_intercept[0], sum_intercept1[0] + p_g[0], sum_intercept2[0] + p_g[1]});
+      sum_intercept[1] = logsumexp({sum_intercept[1], sum_intercept1[1] + p_g[0], sum_intercept2[1] + p_g[1]});
 
-              const int n1 = m + 2;
-              const int n2 = general_N - n1;
-
-              double w1 = log((n1 + 1) * female_start[i] + (n2 - 1) * male_start[i]) +
-                  log((n1 + 1) * female_end[i] + (n2 - 1) * male_end[i]);
-              double w2 = log((n1 - 1) * female_start[i] + (n2 + 1) * male_start[i]) +
-                          log((n1 - 1) * female_end[i] + (n2 + 1) * male_end[i]);
-
-              if (male_end[i] == 0.0 && male_start[i] == 0.0) {
-                w1 = 0.0;
-                w2 = 0.0;
-              } else if (male_end[i] == 0.0 || female_end[i] == 0.0) {
-                w1 = log((n1 + 1) * female_start[i] + (n2 - 1) * male_start[i]);
-                w2 = log((n1 - 1) * female_start[i] + (n2 + 1) * male_start[i]);
-              } else if (male_start[i] == 0.0 || female_start[i] == 0.0) {
-                w1 = log((n1 + 1) * female_end[i] + (n2 - 1) * male_end[i]);
-                w2 = log((n1 - 1) * female_end[i] + (n2 + 1) * male_end[i]);
-              }
-
-              a[m_all] = mutation[index[j]] * log_par[0] - l * par[0] +
-                         likelihood_precalc[index[j]] - d[0] + w1 + log(pi1[m_all]);
-              b[m_all] = mutation[index[j]] * log_par[1] - l * par[1] +
-                         likelihood_precalc[index[j]] - d[1] + w2 + log(pi2[m_all]);
-              double normalize = logsumexp({a[m_all], b[m_all]});
-              a[m_all] = a[m_all] - normalize;
-              b[m_all] = b[m_all] - normalize;
-              double temp_wi = logsumexp({a[m_all] + log_mutation + name[0],
-                                          b[m_all] + log_mutation + name[1]}) +
-                               wi[m_all];
-              sm1(index[j], m_all) = temp_wi;
-
-              const double name2[2] = {
-                  -log_par[0] + log((general_N - (m + 1)) * mu2),
-                  -log_par[1] + log((general_N - (m + 3)) * mu2)};
-
-              temp_wi = logsumexp({a[m_all] + log_mutation + name2[0],
-                                   b[m_all] + log_mutation + name2[1]}) +
-                        wi[m_all];
-              // sum_mutation[1] = logsumexp(sum_mutation[1], temp_wi);
-              // sm2[index[j]] = temp_wi;
-              sm2(index[j], m_all) = temp_wi;
-
-              temp_wi = logsumexp({a[m_all] + log_len + log((m + 1)),
-                                   b[m_all] + log_len + log((m + 3))}) +
-                        wi[m_all];
-              // sum_len[0] = logsumexp(sum_len[0], temp_wi);
-              // sl1[index[j]] = temp_wi;
-              sl1(index[j], m_all) = temp_wi;
-
-              temp_wi =
-                  logsumexp(
-                      {a[m_all] + log_len + log(general_N - (m + 1)),
-                       b[m_all] + log_len + log(general_N - (m + 3))}) +
-                  wi[m_all];
-              // sum_len[1] = logsumexp(sum_len[1], temp_wi);
-              // sl2[index[j]] = temp_wi;
-              sl2(index[j], m_all) = temp_wi;
-
-              temp_wi =
-                  logsumexp(
-                      {a[m_all] + log_mutation - log_par[0] + log(intercept),
-                       b[m_all] + log_mutation - log_par[1] + log(intercept)}) +
-                  wi[m_all];
-              // sum_intercept[0] = logsumexp(sum_intercept[0], temp_wi);
-              // si1[index[j]] = temp_wi;
-              si1(index[j], m_all) = temp_wi;
-
-              temp_wi = logsumexp({a[m_all] + log_len, b[m_all] + log_len}) +
-                        wi[m_all];
-              // sum_intercept[1] = logsumexp(sum_intercept[1], temp_wi);
-              // si2[index[j]] = temp_wi;
-              si2(index[j], m_all) = temp_wi;
-
-              m_all++;
-            }
-          }
-        }
-
-        // for (size_t m = 0; m < N_all; m++) {
-        //   sum_p1[m] = logsumexp({sum_p1[m], a[m]});
-        //   sum_p2[m] = logsumexp({sum_p2[m], b[m]});
-        // }
-        // for (size_t m = 0; m < N_all; m++) {
-        //     sum_outer_p[m] = logsumexp({sum_outer_p[m], wi[m]});
-        // }
-      }
     }
-    // mu1 = exp(sum_mutation[0] - sum_len[0]);
-    // mu2 = exp(sum_mutation[1] - sum_len[1]);
-    mu1 = exp(logsumexp(sm1) - logsumexp(sl1));
-    mu2 = exp(logsumexp(sm2) - logsumexp(sl2));
+    mu1 = exp(sum_mutation[0] - sum_len[0]);
+    mu2 = exp(sum_mutation[1] - sum_len[1]);
 
-    // if (estimate_inner_pi) {
-    //   for (size_t m = 0; m < N_all; m++) {
-    //     pi1[m] = exp(sum_p1[m]) / n;
-    //     pi2[m] = exp(sum_p2[m]) / n;
-    //   }
-    // }
     if (estimate_intercept) {
-      // intercept = exp(sum_intercept[0] - sum_intercept[1]);
-      intercept = exp(logsumexp(si1) - logsumexp(si2));
+      intercept = exp(sum_intercept[0] - sum_intercept[1]);
     }
-    // if (estimate_outer_p) {
-    //     for (size_t m = 0; m < N_all; m++) {
-    //         outer_p[m] = exp(sum_outer_p[m]) / n;
-    //     }
-    // }
 
-    if (fabs(mu1 - prev_mu1) + fabs(mu2 - prev_mu2) < eps) {
+    if (fabs(mu1 - prev_mu1) + fabs(mu2 - prev_mu2) + estimate_intercept * fabs(prev_intercept - intercept) < eps) {
       break;
     }
     prev_mu1 = mu1;
@@ -595,65 +493,49 @@ NumericVector N_ = {3, 5};
   result[1] = mu2;
   result[2] = intercept;
 
-//   if (estimate_inner_pi) {
-//     fprintf(stderr, "Pi:\n");
-//     for (size_t m = 0; m < N_all; m++) {
-//       fprintf(stderr, "%d: (%f, %f) \n", m, pi1[m], pi2[m]);
-//     }
-//     fprintf(stderr, "\n");
-//   }
-
-//   if (estimate_outer_p) {
-//     fprintf(stderr, "Pi:\n");
-//     for (size_t m = 0; m < N_all; m++) {
-//       fprintf(stderr, "%d: %f \n", m, outer_p[m]);
-//     }
-//     fprintf(stderr, "\n");
-//   }
-  // if (estimate_intercept) {
-  //   fprintf(stderr, "Intercept: %f\n", intercept * 1e9);
-  // }
   return (result);
 }
 
+// Should probably delete it?
 
 //' Estimate the mutation rate using EM
 //'
-//' @param mu1 Starting value for the female's mutation parameter
-//' @param mu2 Starting value for the male's mutation parameter
+//' @param mu1 Starting value for the first mutation parameter
+//' @param mu2 Starting value for the second mutation parameter
 //' @param mutation Vector of the number of mutations in a segment
-//' @param len Vector of the length of a segment
-//' @param indexes List of vector, where each vector is the indexes of the segments for an individual
+//' @param len Vector of the (physical) length of a segment
+//' @param indexes List of vector, where each vector is the indexes of the segments for an individual 
 //' @param maxiter Maximum number of EM iterations
-//' @param eps The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps
-//' @param prob Matrix of probabilities, where the first column is the probability of being first cousin, and the second of second cousin.
-//' @param estimate_intercept Whether to estimate the intercept as well, intercept is used when there's genotyping error.
-//' @param intercept Starting value for the intercept.
-//' @param stochastic If true, an incremental version is used instead.
-//' @return An estimate of the male mutation rate, female mutation rate and of the intercept.
+//' @param eps The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps 
+//' @param prob Matrix of probabilities, where the first column is the probability of being first cousin, and the second of second cousin. 
+//' @param estimate_intercept Whether to estimate the intercept as well, intercept is used when there's genotyping error. 
+//' @param intercept Starting value for the intercept. 
+//' @param stochastic If true, an incremental version is used instead. 
+//' @return An estimate of the male mutation rate, female mutation rate and the intercept.
+
 // [[Rcpp::export]]
-NumericVector cpp_em(
-    double mu1, double mu2, const IntegerVector &mutation,
-    const IntegerVector &len, List &indexes, int maxiter, double eps,
-    const NumericMatrix &prob, bool stochastic = false,
-    bool estimate_intercept = false, double intercept = 0.0) 
-{
+NumericVector cpp_em(double mu1, double mu2, const IntegerVector &mutation,
+                     const IntegerVector &len, List &indexes, int maxiter,
+                     double eps, const NumericMatrix &prob,
+                     bool stochastic = false, bool estimate_intercept = false,
+                     double intercept = 0.0) {
   // NumericVector N_ = {3, 5, 7};
   NumericVector N_ = {3, 5};
   // Few tests
   if (prob.nrow() != indexes.size()) {
     // fprintf(
     //     stdout,
-    //     "Number of rows in prob should be the same as the length of indexes.");
-    //     return NA_REAL;
-    REprintf("Number of rows in prob should be the same as the length of indexes.\n");
+    //     "Number of rows in prob should be the same as the length of
+    //     indexes."); return NA_REAL;
+    REprintf("Number of rows in prob should be the same as the length of "
+             "indexes.\n");
     return NA_REAL;
   }
   if (prob.ncol() != N_.size()) {
     REprintf("Number of cols in prob should be 2.\n");
-      // fprintf(
-      //   stdout,
-      //   "Number of cols in prob should be 3.");
+    // fprintf(
+    //   stdout,
+    //   "Number of cols in prob should be 3.");
     return NA_REAL;
   }
   double prev_mu1 = mu1;
@@ -676,7 +558,8 @@ NumericVector cpp_em(
     IntegerVector index = indexes[k];
     for (size_t j = 0; j < index.size(); j++) {
       double temp = lgamma(mutation[index[j]] + 1);
-      likelihood_precalc[index[j]] = mutation[index[j]] * log(len[index[j]]) - temp;
+      likelihood_precalc[index[j]] =
+          mutation[index[j]] * log(len[index[j]]) - temp;
     }
   }
 
@@ -719,7 +602,7 @@ NumericVector cpp_em(
       IntegerVector index = indexes[k];
       if (stochastic) {
         index = sample(indexes.size(), 1, false, R_NilValue, false);
-        // prev_buffer[0] = 
+        // prev_buffer[0] =
       }
 
       // Calculate wia
@@ -731,8 +614,8 @@ NumericVector cpp_em(
           for (size_t m = 0; m < N; m++) {
             const int general_N = N + 3;
             const double par[2] = {
-            (m + 1) * mu1 + (general_N - (m + 1)) * mu2 + intercept,
-            (m + 3) * mu1 + (general_N - (m + 3)) * mu2 + intercept};
+                (m + 1) * mu1 + (general_N - (m + 1)) * mu2 + intercept,
+                (m + 3) * mu1 + (general_N - (m + 3)) * mu2 + intercept};
 
             wi[m_all] +=
                 logsumexp({mutation[index[j]] * log(par[0]) - l * par[0] +
@@ -749,12 +632,12 @@ NumericVector cpp_em(
         for (size_t m = 0; m < N; m++) {
           // Change 0.5 to prob for N=3, 5 etc
           // wi[m] += log(0.5) + R::dbinom(m, N-1, 0.5, 1);
-        //   if (estimate_outer_p) {
-              // wi[m_all] += log(outer_p[m_all]);
-        //   }
-        //   else {
-              wi[m_all] += log(prob(k, n_counter)) + R::dbinom(m, N - 1, 0.5, 1);
-        //   }
+          //   if (estimate_outer_p) {
+          // wi[m_all] += log(outer_p[m_all]);
+          //   }
+          //   else {
+          wi[m_all] += log(prob(k, n_counter)) + R::dbinom(m, N - 1, 0.5, 1);
+          //   }
           m_all++;
         }
         n_counter++;
@@ -814,15 +697,18 @@ NumericVector cpp_em(
               // sl1[index[j]] = temp_wi;
               sl1(index[j], m_all) = temp_wi;
 
-              temp_wi = logsumexp({a[m_all] + log_len + log(general_N - (m + 1)),
-                                   b[m_all] + log_len + log(general_N - (m + 3))}) +
+              temp_wi =
+                  logsumexp({a[m_all] + log_len + log(general_N - (m + 1)),
+                             b[m_all] + log_len + log(general_N - (m + 3))}) +
                   wi[m_all];
               // sum_len[1] = logsumexp(sum_len[1], temp_wi);
               // sl2[index[j]] = temp_wi;
               sl2(index[j], m_all) = temp_wi;
 
-              temp_wi = logsumexp({a[m_all] + log_mutation - log_par[0] + log(intercept),
-                                   b[m_all] + log_mutation - log_par[1] + log(intercept)}) +
+              temp_wi =
+                  logsumexp(
+                      {a[m_all] + log_mutation - log_par[0] + log(intercept),
+                       b[m_all] + log_mutation - log_par[1] + log(intercept)}) +
                   wi[m_all];
               // sum_intercept[0] = logsumexp(sum_intercept[0], temp_wi);
               // si1[index[j]] = temp_wi;
@@ -866,7 +752,6 @@ NumericVector cpp_em(
     //     logsumexp_buffer[3] = logsumexp(sl2);
     //   }
     // }
-    
 
     // if (estimate_inner_pi) {
     //   for (size_t m = 0; m < N_all; m++) {
@@ -880,9 +765,9 @@ NumericVector cpp_em(
       // fprintf(stderr, "Intercept : %f\n", intercept * 1e9);
     }
     // if (estimate_outer_p) {
-        // for (size_t m = 0; m < N_all; m++) {
-        //     outer_p[m] = exp(sum_outer_p[m]) / n;
-        // }
+    // for (size_t m = 0; m < N_all; m++) {
+    //     outer_p[m] = exp(sum_outer_p[m]) / n;
+    // }
     // }
 
     if (fabs(mu1 - prev_mu1) + fabs(mu2 - prev_mu2) < eps) {
@@ -900,21 +785,21 @@ NumericVector cpp_em(
   //   result[i+3] = outer_p[i];
   // }
 
-//   if (estimate_inner_pi) {
-//     fprintf(stderr, "Pi:\n");
-//     for (size_t m = 0; m < N_all; m++) {
-//       fprintf(stderr, "%d: (%f, %f) \n", m, pi1[m], pi2[m]);
-//     }
-//     fprintf(stderr, "\n");
-//   }
+  //   if (estimate_inner_pi) {
+  //     fprintf(stderr, "Pi:\n");
+  //     for (size_t m = 0; m < N_all; m++) {
+  //       fprintf(stderr, "%d: (%f, %f) \n", m, pi1[m], pi2[m]);
+  //     }
+  //     fprintf(stderr, "\n");
+  //   }
 
-//   if (estimate_outer_p) {
-//     fprintf(stderr, "Pi:\n");
-//     for (size_t m = 0; m < N_all; m++) {
-//       fprintf(stderr, "%d: %f \n", m, outer_p[m]);
-//     }
-//     fprintf(stderr, "\n");
-//   }
+  //   if (estimate_outer_p) {
+  //     fprintf(stderr, "Pi:\n");
+  //     for (size_t m = 0; m < N_all; m++) {
+  //       fprintf(stderr, "%d: %f \n", m, outer_p[m]);
+  //     }
+  //     fprintf(stderr, "\n");
+  //   }
   // if (estimate_intercept) {
   //   fprintf(stderr, "Intercept: %f\n", intercept * 1e9);
   // }

@@ -26,14 +26,15 @@ mutation - the number of mutation in the segment.
 length - the physical length of the segment.}
 
 \item{parms}{A vector of starting values for the parameters.
-If male_map and female_map is given, the first parameter should be the male's mutation rate and the second the female's. Otherwise we can't promise which is which.
-If estimate_intercept is true or there's a known genotyping error, a third parameter should be provided as well, and is the estimated (or known) genotyping error rate.}
+If male_map and female_map is given, the first parameter would be the female's mutation rate and the second the male's. Otherwise we can't promise which is which.
+If estimate_intercept is true then a third parameter should be provided as well, and is the starting value for the genotyping error rate.
+You can also provide a third parameter when the genotyping error is known and estimation isn't needed (that is, estimate_intercept is false).}
 
-\item{probs}{Matrix of probabilities, where the first column is the probability of being first cousin, and the second of second cousin.}
+\item{probs}{Vector of probabilities, where each is the probability of an individual to be the offspring of first cousin.}
 
-\item{maxit}{The maximum number of EM iterations}
+\item{maxit}{The maximum number of EM iterations.}
 
-\item{eps}{The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps.}
+\item{eps}{The tolerance. The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps.}
 
 \item{estimate_intercept}{Whether we should estimate the genotyping error.}
 
@@ -50,12 +51,12 @@ If estimate_intercept is true or there's a known genotyping error, a third param
 \item{female_end}{A vector with the female's recombination rate (in morgans) around the end point of each segment.}
 }
 \value{
-Returns the female(first parameter) and male(second parameter) mutation rate, as well as the (estimated or given) genotyping error.
-The order of the first two is only if the female and male maps are provided, otherwise they depend on the starting values.
+Returns the female and male mutation rate, as well as the estimated genotyping error if estimate_intercept is true.
+The first parameter would be the female's mutation rate and the second the male's if the genetic maps are provided, otherwise the order depends on the starting values.
 }
 \description{
 estimate_EM is used to estimate the male's and female's mutation rate based on ROH when the common ancestor of the parents is very close (the assumption here is offspring of either first or second cousin).
-The model is based on a mixture of poissons.
+The model is based on a mixture of Poisson, where the number of mutation is Poisson with the rate influenced by the segment length, number of male and female ancestors and the sex-specific mutation rate.
 }
 \examples{
 library(data.table)
@@ -112,8 +113,8 @@ for (i in 1:22) {
 # A more sophisticated models can (and probably should) be used, since otherwise there's a small bias
 # in the estimate.
 data("prob_model", package = "RohMut")
-probs <- predict(model, data.table::data.table(fs_cousins)[, .N, by = subject], type = "response")
-RohMut::estimate_EM(fs_cousins, c(2e-8, 1e-8, 0.0), probs, maxit = 100, estimate_intercept = T, 
+probs <- predict(model, fs_cousins[, .N, by = subject], type = "response")
+RohMut::estimate_EM(fs_cousins, c(2e-8, 1e-8, 1e-8), probs, maxit = 100, estimate_intercept = T, 
 male_map = male_dist/100,  female_map = female_dist/100, male_start = male_start/100, 
 female_start = female_start/100, male_end = male_end/100, female_end = female_end/100)
 # It's also possible to use acceleration schemes, for example:
