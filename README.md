@@ -4,14 +4,10 @@ This R packages estimates the sex-specific mutation rate based from runs of homo
 
 We assume that the number of mutations in each generation is a Poisson process, with the rate depending on the sex of the ancestor.
 
-Looking for example at the offspring of a first cousin, there are three possible pedigrees - Either the grand grandparents had two daughters/sons and those are the grandparents of the individual, or they had one daughter and one son, and they are the grandparents of the individual. We assume exchangeability so the probability of two sons is 0.25, one son and one daughter is 0.5, and of two daughters is 0.25. Finally, each segment came from either the grand grandmother or grand grandfather with equal probability (actually due to the different recombination rate, the probability is slightly different from 0.5, but we assume it's 0.5).
+Looking for example at the offspring of a first cousin, there are three possible pedigrees - Either the grand grandparents had two daughters/sons and those are the grandparents of the individual, or they had one daughter and one son, and they are the grandparents of the individual. We assume exchangeability, so the probability of two sons is 0.25, one son and one daughter is 0.5, and of two daughters is 0.25. Finally, each segment came from either the grand grandmother or grand grandfather with equal probability (actually due to the different recombination rate, the probability is slightly different from 0.5, but we assume it's 0.5).
 
-We get the hierarchical mixture model:
-
-$$\sum_i^n \sum_{\text{First/second cousin}} P(\text{i is offspring of First/second cousin}) \cdot \sum_{a} P(\text{a is this specific pedigree length}) \sum_{s}^{S_i} 0.5 \text{Pois}(\text{segment s length * (genotyping error rate + (n^f_{a, s}+1) * female mutation rate + (n^m_{a, s} - 1) * male mutation rate)}) + 0.5 \text{Pois}(\text{segment s length * (genotyping error rate + (n^f_{a, s} - 1) * female mutation rate + (n^m_{a, s} + 1) * male mutation rate)})$$
-
-The likelihood is maximized through a variation of the Expectation maximization algorithm (EM).
-Note that the likelihood is symmetric with respect to the mutation rate, so after the estimation if the recombination rate is provided, we use it to select which of the parameters is the male's mutation rate and which is the female's based on the probability of recombination.
+That gives us a hierarchical Poisson mixture model, which we use maximum likelihood through a variation of the Expectation maximization algorithm (EM) to estimate the mutation rates.
+Note that the likelihood is symmetric with respect to the mutation rate, so after the estimation, if the recombination rate is provided, we use it to select which of the parameters is the male's mutation rate and which is the female's based on the probability of recombination.
 
 ## Installation
 
