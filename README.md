@@ -22,7 +22,6 @@ devtools::install_github("Lirazk/RohMut")
 
 The main function is estimate_EM, which returns the estimated female and male mutation rate (in that order if a genomic map is provided), and if required, also the genotyping error rate.
 It has the following required parameters:
-<<<<<<< HEAD
 
 * data - Data frame, with each row in it containing a data on one ROH segment for some individual. The expected columns are:
 1. subject - the id of an individual.
@@ -60,7 +59,6 @@ male_start - A vector with the male's recombination rate (in morgans) around the
 female_start - A vector with the female's recombination rate (in morgans) around the starting point of each segment.
 male_end - A vector with the male's recombination rate (in morgans) around the end point of each segment.
 female_end - A vector with the female's recombination rate (in morgans) around the end point of each segment.
->>>>>>> origin
 
 ### A Minimal working example:
 
