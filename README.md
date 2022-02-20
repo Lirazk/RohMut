@@ -41,24 +41,6 @@ It also has the following optional parameters:
 * female_start - A vector with the female's recombination rate (in morgans) around the starting point of each segment.
 * male_end - A vector with the male's recombination rate (in morgans) around the end point of each segment.
 * female_end - A vector with the female's recombination rate (in morgans) around the end point of each segment.
-=======
-data - Data frame, with each row in it containing a data on one ROH segment for some individual. The expected columns are:
-        subject - the id of an individual.
-        mutation - the number of mutations in the segment.
-        length - the physical length of the segment.
-parms - Vector of starting values for the parameters. Can either be a vector of 2 elements if there is no genotyping error, or 3 in the case it is.
-probs - Vector of the probability of an individual to be the offspring of a first cousin.
-
-It also has the following optional parameters:
-maxit - The maximum number of EM iterations.
-eps - The algorithm stops when the parameters change is less than eps, |prev_mu - mu| < eps.
-estimate_intercept - Whether we should estimate the genotyping error.
-male_map - A vector with the male's recombination rate (in morgans) of each segment of specific length.
-female_map - A vector with the female's recombination rate (in morgans) of each segment of specific length.
-male_start - A vector with the male's recombination rate (in morgans) around the starting point of each segment
-female_start - A vector with the female's recombination rate (in morgans) around the starting point of each segment.
-male_end - A vector with the male's recombination rate (in morgans) around the end point of each segment.
-female_end - A vector with the female's recombination rate (in morgans) around the end point of each segment.
 
 ### A Minimal working example:
 
