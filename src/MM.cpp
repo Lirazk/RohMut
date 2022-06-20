@@ -360,7 +360,7 @@ std::vector<double> calculate_specific_pedigree(const int N, const double mu1, c
     sum_intercept[0] = logsumexp(sum_intercept[0], logsumexp_ji1[m] + wi[m]);
     sum_intercept[1] = logsumexp(sum_intercept[1], logsumexp_ji2[m] + wi[m]);
   }
-  std::vector result(7, 0.0);
+  std::vector<double> result(7, 0.0);
   result[0] = sum_mutation[0];
   result[1] = sum_mutation[1];
   result[2] = sum_len[0];
@@ -431,7 +431,7 @@ NumericVector cpp_em2(double mu1, double mu2, const IntegerVector &mutation,
       double sum_mutation1[2] = {-INFINITY, -INFINITY};
       double sum_len1[2] = {-INFINITY, -INFINITY};
       double sum_intercept1[2] = {-INFINITY, -INFINITY};
-      std::vector result1 =
+      std::vector<double> result1 =
           calculate_specific_pedigree(N_[0], mu1, mu2, intercept, mutation, len, index, likelihood_precalc);
       sum_mutation1[0] = result1[0];
       sum_mutation1[1] = result1[1];
@@ -441,7 +441,7 @@ NumericVector cpp_em2(double mu1, double mu2, const IntegerVector &mutation,
       sum_intercept1[1] = result1[5];
       double normalize1 = result1[6];
 
-      std::vector result2 =
+      std::vector<double> result2 =
           calculate_specific_pedigree(N_[1], mu1, mu2, intercept, mutation, len, index, likelihood_precalc);
       double sum_mutation2[2] = {-INFINITY, -INFINITY};
       double sum_len2[2] = {-INFINITY, -INFINITY};
